@@ -1,0 +1,1621 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gargantua: buraco negro interativo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=B612:wght@400;700&family=B612+Mono&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: dark;
+    --void: #000000;
+    --ink: #ECE8DF;
+    --ink-2: #BDB8AD;
+    --ink-3: #969186;
+    --rule: rgba(236, 232, 223, 0.18);
+    --rule-strong: rgba(236, 232, 223, 0.42);
+    --signal: #F2C66B;
+    --font: "B612", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono: "B612 Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --pad: clamp(14px, 4vw, 32px);
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  *, *::before, *::after { box-sizing: inherit; }
+  [hidden] { display: none !important; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  html, body {
+    height: 100%; height: 100dvh; margin: 0; overflow: hidden;
+    background: var(--void); color: var(--ink);
+    font-family: var(--font); font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #sky {
+    position: fixed; inset: 0; z-index: 0;
+    width: 100%; height: 100%; display: block;
+    touch-action: none; cursor: grab; outline: none;
+    user-select: none; -webkit-user-select: none;
+  }
+  #sky.dragging { cursor: grabbing; }
+
+  .hud {
+    position: fixed; inset: 0; z-index: 2; pointer-events: none;
+    padding:
+      calc(var(--pad) + env(safe-area-inset-top, 0px))
+      calc(var(--pad) + env(safe-area-inset-right, 0px))
+      calc(var(--pad) + env(safe-area-inset-bottom, 0px))
+      calc(var(--pad) + env(safe-area-inset-left, 0px));
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr auto auto;
+    grid-template-areas:
+      "top"
+      "."
+      "inst"
+      "ctl";
+    gap: 12px;
+    transition: opacity 250ms ease;
+    user-select: none; -webkit-user-select: none;
+    text-shadow: 0 0 10px rgba(0,0,0,.85), 0 0 2px rgba(0,0,0,.9);
+  }
+  .hud.hidden { opacity: 0; }
+  .hud::before, .hud::after {
+    content: ""; position: fixed; left: 0; right: 0; z-index: -1; pointer-events: none;
+  }
+  .hud::before { bottom: 0; height: min(300px, 46vh); background: linear-gradient(to top, rgba(0,0,0,.86), rgba(0,0,0,.48) 50%, transparent); }
+  .hud::after { top: 0; height: 150px; background: linear-gradient(to bottom, rgba(0,0,0,.68), transparent); }
+
+  .top { grid-area: top; max-width: 56ch; }
+  h1 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: 0.01em; }
+  .sub { display: none; margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+  .status {
+    margin: 6px 0 0; min-height: 2.6em; font-size: 13px; line-height: 1.45; color: var(--ink);
+    transition: opacity 300ms ease;
+  }
+  .status.dim { opacity: 0; }
+  .status .keys { display: none; color: var(--ink-3); }
+  @media (hover: hover) and (pointer: fine) { .status .keys { display: block; } }
+
+  .inst { grid-area: inst; align-self: end; display: grid; gap: 10px; min-width: 0; }
+  .label, dt { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+  .big {
+    display: flex; align-items: baseline; gap: 7px; margin-top: 2px;
+    font-family: var(--mono); font-size: clamp(30px, 8vw, 46px); line-height: 1;
+    font-variant-numeric: tabular-nums; color: var(--ink);
+    transition: color 200ms ease;
+  }
+  .big .unit { font-family: var(--font); font-size: 14px; color: var(--ink-2); }
+  .diving .big { color: var(--signal); }
+
+  .gauge { display: block; width: 100%; max-width: 220px; height: auto; margin-top: 6px; overflow: visible; }
+  .g-base { stroke: var(--rule-strong); stroke-width: 1; }
+  .g-disk { fill: var(--ink-3); }
+  .g-tick { stroke: var(--ink-2); stroke-width: 1; }
+  .g-txt { fill: var(--ink-3); font-family: var(--font); font-size: 11px; }
+  .g-me { fill: var(--ink); transition: fill 200ms ease; }
+  .diving .g-me { fill: var(--signal); }
+
+  dl { margin: 0; display: grid; grid-template-columns: repeat(2, auto); gap: 6px 20px; justify-content: start; }
+  dl > div { display: flex; flex-direction: column; gap: 2px; }
+  dd { margin: 0; font-family: var(--mono); font-size: 14px; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .opt { display: none; }
+
+  .ctl {
+    grid-area: ctl; align-self: end; justify-self: stretch; pointer-events: auto;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 10px;
+  }
+  .field { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2); }
+  .field-label, kbd, .full { display: none; }
+  .short { display: inline; }
+  output { font-family: var(--mono); font-size: 12.5px; color: var(--ink); min-width: 4.2ch; text-align: right; font-variant-numeric: tabular-nums; }
+
+  button {
+    font: inherit; font-size: 12.5px; color: var(--ink-2);
+    background: rgba(0,0,0,.45); border: 1px solid var(--rule); border-radius: 4px;
+    padding: 8px 11px; min-height: 36px; cursor: pointer;
+    touch-action: manipulation;
+    transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease;
+  }
+  button:hover { color: var(--ink); border-color: var(--rule-strong); }
+  button:disabled { opacity: .5; cursor: default; }
+  .seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--rule); border-radius: 4px; background: rgba(0,0,0,.45); }
+  .seg button { border: 0; border-radius: 3px; padding: 6px 10px; min-height: 32px; background: transparent; }
+  .seg button[aria-pressed="true"] { background: rgba(236,232,223,.16); color: var(--ink); }
+  #sound[aria-pressed="true"] { color: var(--signal); border-color: rgba(242,198,107,.55); }
+  kbd { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-left: 6px; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+  input[type="range"] { -webkit-appearance: none; appearance: none; width: 82px; height: 28px; background: transparent; cursor: pointer; margin: 0; }
+  input[type="range"]::-webkit-slider-runnable-track { height: 2px; background: var(--rule-strong); border-radius: 1px; }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; margin-top: -7px; border: 0; border-radius: 50%; background: var(--ink); }
+  input[type="range"]::-moz-range-track { height: 2px; background: var(--rule-strong); }
+  input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border: 0; border-radius: 50%; background: var(--ink); }
+
+  .reticle { position: fixed; left: 50%; top: 50%; width: 64px; height: 64px; margin: -32px 0 0 -32px; z-index: 3; pointer-events: none; opacity: 0; transition: opacity 200ms ease; }
+  .reticle.on { opacity: 1; }
+  .reticle circle { fill: none; stroke-width: 1.5; }
+  .reticle .track { stroke: rgba(236,232,223,.28); }
+  .reticle .prog { stroke: var(--signal); stroke-dasharray: 138.23; stroke-dashoffset: 138.23; transform: rotate(-90deg); transform-origin: 32px 32px; }
+  .reticle.burst { animation: burst 600ms ease-out forwards; }
+  @keyframes burst { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(2.4); } }
+  body.hud-off .reticle { display: none; }
+
+  .restore {
+    position: fixed; z-index: 4;
+    right: calc(var(--pad) + env(safe-area-inset-right, 0px));
+    bottom: calc(var(--pad) + env(safe-area-inset-bottom, 0px));
+    opacity: 0; pointer-events: none; transition: opacity 300ms ease;
+  }
+  .restore.show, .restore:focus-visible { opacity: 1; pointer-events: auto; }
+
+  .overlay { position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; padding: var(--pad); background: var(--void); transition: opacity 600ms ease; }
+  .overlay.gone { opacity: 0; pointer-events: none; }
+  .overlay p { margin: 0; color: var(--ink-2); line-height: 1.55; }
+  .fail .box { max-width: 46ch; }
+  .fail h2 { margin: 0 0 8px; font-size: 16px; }
+  .fail button { margin-top: 16px; }
+
+  @media (min-width: 720px) {
+    .hud { gap: 18px; }
+    .sub { display: block; }
+    .status { margin-top: 10px; font-size: 13.5px; }
+    .inst { gap: 14px; }
+    .label, dt { font-size: 12.5px; }
+    .gauge { max-width: 240px; margin-top: 10px; }
+    dl { grid-template-columns: repeat(3, auto); gap: 6px 28px; }
+    dd { font-size: 15px; }
+    .opt { display: flex; }
+    .ctl { justify-self: start; justify-content: flex-start; gap: 14px 20px; }
+    .field, button { font-size: 13px; }
+    .field-label, kbd, .full { display: inline; }
+    .short { display: none; }
+    input[type="range"] { width: 120px; }
+  }
+
+  @media (min-width: 1180px) {
+    .hud {
+      grid-template-columns: 1fr auto;
+      grid-template-rows: auto 1fr auto;
+      grid-template-areas:
+        "top top"
+        ". ."
+        "inst ctl";
+      gap: 16px 32px;
+    }
+    .ctl { justify-self: end; justify-content: flex-end; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="sky" role="img" aria-label="Simulação de um buraco negro com disco de acreção. Arraste para orbitar, segure para mergulhar."></canvas>
+
+<svg id="reticle" class="reticle" viewBox="0 0 64 64" aria-hidden="true">
+  <circle class="track" cx="32" cy="32" r="22"/>
+  <circle id="reticle-prog" class="prog" cx="32" cy="32" r="22"/>
+</svg>
+
+<div id="hud" class="hud">
+  <header class="top">
+    <h1>Gargantua</h1>
+    <p class="sub">Buraco negro supermassivo com 100 milhões de massas solares. Raio do horizonte (Rₛ): 1,97 UA.</p>
+    <p id="status" class="status" aria-live="polite">
+      Arraste para orbitar. Role para aproximar. Segure para mergulhar rumo ao horizonte.
+      <span class="keys">No teclado: setas orbitam, +/- aproxima, espaço mergulha, H oculta a interface.</span>
+    </p>
+  </header>
+
+  <section class="inst" aria-label="Instrumentos">
+    <div>
+      <div class="label">Distância do centro</div>
+      <div class="big"><span id="t-dist">26,0</span><span class="unit">Rₛ</span></div>
+      <svg class="gauge" viewBox="0 0 240 30" aria-hidden="true">
+        <line class="g-base" x1="0" y1="11" x2="240" y2="11"/>
+        <rect id="g-disk" class="g-disk" y="9" height="4" x="0" width="0"/>
+        <line id="g-hor" class="g-tick" x1="0" x2="0" y1="4" y2="18"/>
+        <line id="g-ph" class="g-tick" x1="0" x2="0" y1="6" y2="16"/>
+        <text id="g-hor-t" class="g-txt" x="0" y="29">horizonte</text>
+        <text id="g-disk-t" class="g-txt" x="0" y="29" text-anchor="middle">disco</text>
+        <g id="g-me"><path class="g-me" d="M0 8 L-4.5 0 L4.5 0 Z"/></g>
+      </svg>
+    </div>
+    <dl>
+      <div><dt>Dilatação do tempo</dt><dd id="t-gamma">γ 1,0302</dd></div>
+      <div><dt>1 hora em órbita</dt><dd id="t-earth">1 h 02 min na Terra</dd></div>
+      <div class="opt"><dt>Velocidade local</dt><dd id="t-orbit">0,14 c</dd></div>
+    </dl>
+  </section>
+
+  <section class="ctl" aria-label="Controles">
+    <label class="field">
+      <span>Brilho</span>
+      <input id="exposure" type="range" min="0" max="100" value="50">
+      <output id="exposure-out" for="exposure">100%</output>
+    </label>
+    <div class="field">
+      <span class="field-label" id="spectrum-label">Espectro</span>
+      <div class="seg" role="group" aria-labelledby="spectrum-label">
+        <button data-palette="cinema" aria-pressed="true">Cinema</button>
+        <button data-palette="fisico" aria-pressed="false">Físico</button>
+        <button data-palette="frio" aria-pressed="false">Frio</button>
+      </div>
+    </div>
+    <button id="sound" aria-pressed="true">Som ligado</button>
+    <button id="hide"><span class="full">Ocultar interface</span><span class="short">Ocultar</span><kbd>H</kbd></button>
+  </section>
+</div>
+
+<button id="restore" class="restore" hidden>Mostrar interface <kbd>H</kbd></button>
+
+<div id="loader" class="overlay" role="status"><p>Preparando a simulação</p></div>
+<div id="fail" class="overlay fail" hidden>
+  <div class="box">
+    <h2 id="fail-title">A simulação não abriu</h2>
+    <p id="fail-text"></p>
+    <button id="fail-reload">Recarregar a página</button>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+const PHYS = {
+  RS: 1.0,
+  R_IN: 3.0,
+  R_OUT: 14.0,
+  FLOW_PERIOD: 20.0,
+  MAX_STEPS: 240,
+  ESC_R: 18.5
+};
+const VIEW = {
+  startDist: 26, minDist: 4.2, maxDist: 60, minDiveDist: 3.1,
+  startPitch: 0.11, roll: -0.10, baseFov: 36
+};
+const PALETTES = {
+  cinema: { tpeak: 4600,  shift: 0.35, beam: 2.0, tint: [1.06, 0.90, 0.74], gain: 1.25 },
+  fisico: { tpeak: 8500,  shift: 1.00, beam: 4.0, tint: [1.00, 1.00, 1.00], gain: 1.00 },
+  frio:   { tpeak: 15000, shift: 0.40, beam: 2.2, tint: [0.72, 0.86, 1.12], gain: 1.10 }
+};
+const GAUGE = { width: 240, rMax: 60 };
+
+const fl = (n) => Number(n).toFixed(4);
+const DEFS =
+  `#define RS ${fl(PHYS.RS)}\n#define R_IN ${fl(PHYS.R_IN)}\n#define R_OUT ${fl(PHYS.R_OUT)}\n` +
+  `#define FLOW_PERIOD ${fl(PHYS.FLOW_PERIOD)}\n#define MAX_STEPS ${PHYS.MAX_STEPS}\n#define ESC_R ${fl(PHYS.ESC_R)}\n`;
+
+const VS = `#version 300 es
+in vec2 aPos;
+out vec2 vUv;
+void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+const FS_HEAD = `#version 300 es
+${DEFS}
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+`;
+
+const FS_RAY = `
+uniform vec2 uRes;
+uniform float uTime;
+uniform vec3 uCamPos;
+uniform vec3 uRight;
+uniform vec3 uUp;
+uniform vec3 uFwd;
+uniform float uTanHalf;
+uniform float uBeta;
+uniform float uShockR;
+uniform float uShockS;
+uniform float uTpeak;
+uniform float uShift;
+uniform float uBeam;
+uniform float uGain;
+uniform vec3 uTint;
+precision highp sampler3D;
+uniform sampler3D uNoise;
+
+const float PI = 3.14159265359;
+const float TN_NORM = 0.4879;
+const mat3 ROT = mat3(0.00, 0.80, 0.60, -0.80, 0.36, -0.48, -0.60, -0.48, 0.64);
+
+vec3 hash33(vec3 p3) {
+  p3 = fract(p3 * vec3(0.1031, 0.1030, 0.0973));
+  p3 += dot(p3, p3.yxz + 33.33);
+  return fract((p3.xxy + p3.yxx) * p3.zyx);
+}
+
+float nz(vec3 p, float fp) {
+  // Mipmap mais nítido para preservar os filamentos finos do plasma
+  float lod = log2(max(fp * 1.35, 1.0));
+  return (textureLod(uNoise, p * (1.0 / 32.0), lod).r * 2.0 - 1.0) * 0.8;
+}
+
+float fbm(vec3 p, float fp) {
+  float s = 0.0, a = 0.5, norm = 0.0;
+  for (int i = 0; i < 4; i++) {
+    s += a * nz(p, fp);
+    norm += a;
+    p = ROT * p * 2.03 + vec3(1.7, 9.2, 3.1);
+    fp *= 2.03;
+    a *= 0.5;
+  }
+  return s / norm;
+}
+
+vec3 blackbody(float kelvin) {
+  float t = clamp(kelvin, 1000.0, 40000.0) / 100.0;
+  vec3 c;
+  if (t <= 66.0) {
+    c.r = 1.0;
+    c.g = clamp(0.39008158 * log(t) - 0.63184144, 0.0, 1.0);
+    c.b = t <= 19.0 ? 0.0 : clamp(0.54320679 * log(t - 10.0) - 1.19625409, 0.0, 1.0);
+  } else {
+    c.r = clamp(1.29293619 * pow(t - 60.0, -0.1332047592), 0.0, 1.0);
+    c.g = clamp(1.12989086 * pow(t - 60.0, -0.0755148492), 0.0, 1.0);
+    c.b = 1.0;
+  }
+  return pow(c, vec3(2.2));
+}
+
+float flowNoise(float r, float ang, float fp) {
+  float omega = sqrt(0.5 * RS / (r * r * r));
+  float P = FLOW_PERIOD;
+  float n = 0.0, wsum = 0.0;
+  for (int k = 0; k < 2; k++) {
+    float tk = uTime + float(k) * 0.5 * P;
+    float cyc = floor(tk / P);
+    float tau = tk - cyc * P;
+    float w = sin(PI * tau / P);
+    w *= w;
+    float ph = ang + omega * tau;
+    vec3 q = vec3(cos(ph) * r * 0.42, sin(ph) * r * 0.42, r * 2.1);
+    q += (hash33(vec3(cyc, float(k) * 13.0, 5.0)) - 0.5) * 80.0;
+    n += w * fbm(q, fp * 2.1);
+    wsum += w * w;
+  }
+  return n * inversesqrt(max(wsum, 1e-3));
+}
+
+vec3 diskEmit(vec3 hp, vec3 dir, float r, float fp, int hitOrder, out float alpha) {
+  float ang = atan(hp.z, hp.x);
+  float n = flowNoise(r, ang, fp);
+  float lanes = fbm(vec3(r * 3.2, 1.3, 2.7), fp * 3.2);
+  float body = smoothstep(-0.30, 0.40, n + 0.55 * lanes);
+  float knots = pow(smoothstep(0.22, 0.62, n), 3.0) * 1.6;
+
+  // Borda interna suavizada proporcionalmente à ordem da imagem gravitacional para evitar serrilhado
+  float innerSoft = hitOrder > 0 ? 0.85 : 0.42;
+  float env = smoothstep(R_IN * 0.96, R_IN + innerSoft, r) * (1.0 - smoothstep(R_OUT * 0.55, R_OUT, r));
+  float dens = (0.10 + body + knots) * env;
+
+  float sh = uShockS * exp(-pow((r - uShockR) / 0.8, 2.0));
+  dens *= 1.0 + sh * 2.0;
+
+  float x = clamp(R_IN / r, 0.0, 0.999);
+  float tn = pow(x, 0.75) * pow(max(1.0 - sqrt(x), 0.001), 0.25) / TN_NORM;
+
+  float beta = min(sqrt(0.5 * RS / max(r - RS, 0.05)), 0.9);
+  float gam = inversesqrt(1.0 - beta * beta);
+  vec3 vdir = normalize(vec3(hp.z, 0.0, -hp.x));
+  float D = 1.0 / (gam * (1.0 - beta * dot(vdir, -dir)));
+  float g = D * sqrt(max(1.0 - RS / r, 0.0));
+
+  float dustRim = mix(0.42, 1.0, smoothstep(R_OUT, R_OUT * 0.48, r));
+  vec3 col = blackbody(uTpeak * tn * pow(g, uShift)) * uTint * dustRim;
+  float I = pow(tn, 2.2) * pow(g, uBeam) * uGain * 3.0 * (1.0 + knots * 0.8);
+  vec3 S = col * I + vec3(1.0, 0.96, 0.9) * sh * 1.2 * (0.3 + tn);
+
+  float H = 0.045 + 0.012 * r;
+  float tau = dens * 2.4 * H / max(abs(dir.y), 0.035);
+  alpha = 1.0 - exp(-tau);
+  return S;
+}
+
+// Projeção contínua em face de cubo para evitar que estrelas esticadas pela lente fiquem pontilhadas
+vec3 starLayerCube(vec3 d, float scale, float thresh, float pixA, float seed, float gain) {
+  vec3 ad = abs(d);
+  vec2 uv;
+  float face;
+  if (ad.x >= ad.y && ad.x >= ad.z) { uv = d.yz / ad.x; face = d.x > 0.0 ? 0.0 : 1.0; }
+  else if (ad.y >= ad.x && ad.y >= ad.z) { uv = d.xz / ad.y; face = d.y > 0.0 ? 2.0 : 3.0; }
+  else { uv = d.xy / ad.z; face = d.z > 0.0 ? 4.0 : 5.0; }
+
+  vec2 p = uv * scale;
+  vec2 c = floor(p);
+  vec2 f = p - c;
+
+  vec3 h = hash33(vec3(c, face * 17.0 + seed));
+  if (h.x > thresh) return vec3(0.0);
+
+  // Mantém o centro da estrela longe das bordas da célula 2D (zero corte/serrilhado)
+  vec2 sp = 0.24 + 0.52 * h.yz;
+  float distUv = length(f - sp) / scale;
+  float sig = max(pixA * 0.85, 0.00055);
+  float I = exp(-0.5 * (distUv * distUv) / (sig * sig));
+  float flux = gain * (0.06 + pow(h.y, 7.5) * 2.1);
+  return mix(vec3(1.0, 0.74, 0.48), vec3(0.74, 0.86, 1.0), h.z) * I * flux;
+}
+
+vec3 sky(vec3 d, float pixA) {
+  vec3 col = vec3(0.0);
+  col += starLayerCube(d, 72.0, 0.055, pixA, 1.7, 1.0);
+  col += starLayerCube(d, 155.0, 0.065, pixA, 7.3, 0.42);
+  vec3 gn = normalize(vec3(0.35, 0.88, 0.32));
+  float band = exp(-pow(dot(d, gn) / 0.24, 2.0));
+  float m = 0.5 + 0.5 * fbm(d * 5.0 + 3.0, pixA * 5.0);
+  float dust = smoothstep(0.35, 0.75, 0.5 + 0.5 * fbm(d * 11.0 + 9.0, pixA * 11.0));
+  col += mix(vec3(0.55, 0.5, 0.65), vec3(0.95, 0.8, 0.62), m) * band * m * (1.0 - 0.7 * dust) * 0.035;
+  col *= mix(vec3(1.0), vec3(0.72, 0.88, 1.4), clamp(uBeta * 1.6, 0.0, 1.0));
+  return col;
+}
+
+// Direção do raio para um ponto de tela (com onda de choque e aberração relativística)
+vec3 rayDir(vec2 p) {
+  if (uShockS > 0.01) {
+    float rScreen = length(p);
+    float ringWave = exp(-pow((rScreen - uShockR * 0.065) * 5.5, 2.0)) * uShockS;
+    p *= 1.0 + 0.028 * ringWave * cos(2.0 * atan(p.y, p.x));
+  }
+  vec3 d = normalize(uFwd + (uRight * p.x + uUp * p.y) * uTanHalf);
+  if (uBeta > 0.0005) {
+    float c = dot(d, uFwd);
+    float cr = (c - uBeta) / (1.0 - uBeta * c);
+    vec3 side = d - uFwd * c;
+    float sl = length(side);
+    if (sl > 1e-5) d = uFwd * cr + (side / sl) * sqrt(max(0.0, 1.0 - cr * cr));
+  }
+  return d;
+}
+
+const float B_CRIT = 2.5980762 * RS; // parâmetro de impacto crítico (3*sqrt(3)/2 Rs)
+
+vec3 trace(vec3 d) {
+  float pixA = 2.0 * uTanHalf / uRes.y;
+  vec3 pos = uCamPos;
+  vec3 vel = d;
+  vec3 hv = cross(pos, vel);
+  float h2 = dot(hv, hv);
+
+  vec3 acc = vec3(0.0);
+  float trans = 1.0;
+  float travel = 0.0;
+  float minR = 1000.0;
+  vec3 closestPos = pos;
+  int hits = 0;
+  bool escaped = false;
+
+  for (int i = 0; i < MAX_STEPS; i++) {
+    float r2 = dot(pos, pos);
+    float r = sqrt(r2);
+    if (r < minR) { minR = r; closestPos = pos; }
+    if (r < RS) break;
+    if (r > ESC_R && dot(pos, vel) > 0.0) {
+      vec3 dir = normalize(vel);
+      float b = sqrt(h2);
+      float sinPhi = sqrt(max(0.0, 1.0 - h2 / r2));
+      float delta = RS / max(b, 1e-3) * (1.0 - sinPhi);
+      vec3 inward = -pos - dir * dot(-pos, dir);
+      float il = length(inward);
+      if (il > 1e-5) dir = dir * cos(delta) + (inward / il) * sin(delta);
+      vel = dir;
+      escaped = true;
+      break;
+    }
+
+    // Passo mais refinado próximo ao plano do disco e à esfera de fótons
+    float planeRefine = mix(0.55, 1.0, smoothstep(0.0, 0.35 * r, abs(pos.y)));
+    float ds = 0.072 * r * planeRefine * mix(0.32, 1.0, smoothstep(1.4, 4.5, r));
+    ds = clamp(ds, 0.012, 4.0);
+    float dt = ds / length(vel);
+
+    vec3 a0 = -1.5 * RS * h2 * pos / (r2 * r2 * r);
+    vec3 vh = vel + a0 * (0.5 * dt);
+    vec3 np = pos + vh * dt;
+    float nr2 = dot(np, np);
+    float nr = sqrt(nr2);
+    if (nr < RS * 0.6) break;
+    vec3 a1 = -1.5 * RS * h2 * np / (nr2 * nr2 * nr);
+    vec3 nv = vh + a1 * (0.5 * dt);
+    travel += ds;
+
+    // Limita as interseções diretas do disco às ordens 0 e 1 (a sub-imagem n>=2 é substituída pelo anel de fótons analítico anti-serrilhado)
+    if (pos.y * np.y < 0.0 && hits < 2) {
+      float fr = pos.y / (pos.y - np.y);
+      vec3 hp = mix(pos, np, fr);
+      float rh = length(hp.xz);
+      if (rh > R_IN * 0.95 && rh < R_OUT) {
+        vec3 dir = normalize(mix(vel, nv, fr));
+        float fp = pixA * (travel - ds * (1.0 - fr)) * (1.0 + 2.4 * float(hits))
+                 * inversesqrt(max(abs(dir.y), 0.05));
+        float al;
+        vec3 S = diskEmit(hp, dir, rh, fp, hits, al);
+        acc += trans * S * al;
+        trans *= 1.0 - al;
+        hits++;
+        if (trans < 0.01) break;
+      }
+    }
+    pos = np;
+    vel = nv;
+  }
+
+  // Anel de fótons analítico em função do parâmetro de impacto b (contínuo entre pixels => sem degraus)
+  float b = sqrt(h2);
+  float fpB = pixA * length(uCamPos);              // tamanho de 1 pixel no espaço de b
+  float bOff = b - B_CRIT * 1.0012;
+  float phWidth = max(0.010 * RS, 0.75 * fpB);
+  float photonRing = exp(-pow(bOff / phWidth, 2.0));
+  if (photonRing > 0.002) {
+    vec3 cp = uCamPos - d * dot(uCamPos, d);       // ponto de maior aproximação (reta) — suave na tela
+    vec3 tang = normalize(vec3(cp.z, 0.0, -cp.x) + vec3(1e-5, 0.0, 0.0));
+    float doppler = clamp(1.0 + 0.42 * dot(tang, uRight), 0.55, 1.65);
+    vec3 ringCol = blackbody(uTpeak * 0.95 * pow(doppler, uShift)) * uTint;
+    acc += trans * ringCol * photonRing * pow(doppler, uBeam * 0.55) * uGain * 0.68;
+  }
+
+  vec3 col = acc;
+  if (escaped) col += trans * sky(normalize(vel), pixA);
+  col = max(col, vec3(0.0));
+  if (any(isnan(col))) col = vec3(0.0);
+  return min(col, vec3(64.0));
+}
+
+void main() {
+  vec2 p0 = (gl_FragCoord.xy - 0.5 * uRes) / (0.5 * uRes.y);
+  float px = 2.0 / uRes.y;                          // 1 pixel em unidades de tela
+  float pixA = 2.0 * uTanHalf / uRes.y;
+  float fpB = pixA * length(uCamPos);
+
+  vec3 d0 = rayDir(p0);
+  float b0 = length(cross(uCamPos, d0));
+  float band = b0 - B_CRIT;
+
+  // Supersampling adaptativo só no anel ao redor da sombra (borda do horizonte, anel de fótons e imagem secundária do disco)
+  bool edge = band > -max(0.30 * RS, 4.0 * fpB) && band < max(1.20 * RS, 6.0 * fpB);
+  vec3 col;
+  if (edge) {
+    // Rotated-grid 8x (2 anéis de 4) — borda lisa sem custo na tela inteira
+    const vec2 O[8] = vec2[8](
+      vec2( 0.125,  0.375), vec2(-0.375,  0.125), vec2(-0.125, -0.375), vec2( 0.375, -0.125),
+      vec2( 0.4375, 0.3125), vec2(-0.3125, 0.4375), vec2(-0.4375,-0.3125), vec2( 0.3125,-0.4375));
+    int n = abs(band) < max(0.12 * RS, 3.0 * fpB) ? 8 : 4;
+    col = vec3(0.0);
+    for (int k = 0; k < 8; k++) {
+      if (k >= n) break;
+      col += trace(rayDir(p0 + O[k] * px));
+    }
+    col /= float(n);
+  } else {
+    col = trace(d0);
+  }
+  fragColor = vec4(col, 1.0);
+}`;
+
+const FS_PREFILTER = `
+uniform sampler2D uTex;
+uniform vec2 uTexel;
+uniform float uThreshold;
+void main() {
+  vec3 c = texture(uTex, vUv + uTexel * vec2(-0.5, -0.5)).rgb
+         + texture(uTex, vUv + uTexel * vec2( 0.5, -0.5)).rgb
+         + texture(uTex, vUv + uTexel * vec2(-0.5,  0.5)).rgb
+         + texture(uTex, vUv + uTexel * vec2( 0.5,  0.5)).rgb;
+  c = min(c * 0.25, vec3(64.0));
+  float br = max(c.r, max(c.g, c.b));
+  float knee = uThreshold * 0.6;
+  float soft = clamp(br - uThreshold + knee, 0.0, 2.0 * knee);
+  soft = soft * soft / (4.0 * knee + 1e-4);
+  float w = max(soft, br - uThreshold) / max(br, 1e-4);
+  fragColor = vec4(c * w, 1.0);
+}`;
+
+const FS_DOWN = `
+uniform sampler2D uTex;
+uniform vec2 uTexel;
+void main() {
+  vec3 s = texture(uTex, vUv).rgb * 4.0;
+  s += texture(uTex, vUv + uTexel * vec2(-1.0, -1.0)).rgb;
+  s += texture(uTex, vUv + uTexel * vec2( 1.0, -1.0)).rgb;
+  s += texture(uTex, vUv + uTexel * vec2(-1.0,  1.0)).rgb;
+  s += texture(uTex, vUv + uTexel * vec2( 1.0,  1.0)).rgb;
+  fragColor = vec4(s / 8.0, 1.0);
+}`;
+
+const FS_UP = `
+uniform sampler2D uTex;
+uniform sampler2D uBase;
+uniform vec2 uTexel;
+void main() {
+  vec2 o = uTexel;
+  vec3 s = texture(uTex, vUv + vec2(-2.0 * o.x, 0.0)).rgb
+         + texture(uTex, vUv + vec2( 2.0 * o.x, 0.0)).rgb
+         + texture(uTex, vUv + vec2(0.0, -2.0 * o.y)).rgb
+         + texture(uTex, vUv + vec2(0.0,  2.0 * o.y)).rgb;
+  s += 2.0 * (texture(uTex, vUv + vec2(-o.x,  o.y)).rgb
+            + texture(uTex, vUv + vec2( o.x,  o.y)).rgb
+            + texture(uTex, vUv + vec2( o.x, -o.y)).rgb
+            + texture(uTex, vUv + vec2(-o.x, -o.y)).rgb);
+  fragColor = vec4(s / 12.0 + texture(uBase, vUv).rgb, 1.0);
+}`;
+
+const FS_COMPOSITE = `
+uniform sampler2D uScene;
+uniform sampler2D uBloom;
+uniform float uExposure;
+uniform float uBloomStr;
+uniform float uAberr;
+uniform float uVig;
+uniform float uAspect;
+uniform float uFrame;
+
+const mat3 ACES_IN  = mat3(0.59719, 0.07600, 0.02840, 0.35458, 0.90834, 0.13383, 0.04823, 0.01566, 0.83777);
+const mat3 ACES_OUT = mat3(1.60475, -0.10208, -0.00327, -0.53108, 1.10813, -0.07276, -0.07367, -0.00605, 1.07602);
+
+vec3 rrtOdt(vec3 v) {
+  vec3 a = v * (v + 0.0245786) - 0.000090537;
+  vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081;
+  return a / b;
+}
+vec3 toSRGB(vec3 c) {
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+float h12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+void main() {
+  vec2 c = vUv - 0.5;
+  vec3 col;
+  if (uAberr > 1e-4) {
+    col = vec3(texture(uScene, vUv - c * uAberr).r,
+               texture(uScene, vUv).g,
+               texture(uScene, vUv + c * uAberr).b);
+  } else {
+    col = texture(uScene, vUv).rgb;
+  }
+  col += texture(uBloom, vUv).rgb * uBloomStr;
+  col *= uExposure;
+  col = clamp(ACES_OUT * rrtOdt(ACES_IN * col), 0.0, 1.0);
+  float r = length(c * vec2(uAspect, 1.0));
+  col *= mix(1.0, 1.0 - smoothstep(0.2, 1.05, r), uVig);
+  col = toSRGB(col);
+  float n = h12(gl_FragCoord.xy + uFrame * 1.37) + h12(gl_FragCoord.xy * 1.73 + uFrame * 2.11) - 1.0;
+  fragColor = vec4(col + n / 255.0, 1.0);
+}`;
+
+class Drone {
+  constructor() {
+    this.ctx = null; this.on = false; this.timer = null; this.suspendTimer = null; this.step = 0;
+    this.chords = [
+      [110.00, 164.81, 220.00, 261.63, 329.63],
+      [87.31, 130.81, 174.61, 220.00, 261.63],
+      [73.42, 146.83, 220.00, 261.63, 329.63],
+      [82.41, 164.81, 220.00, 246.94, 329.63]
+    ];
+  }
+  static supported() { return !!(window.AudioContext || window.webkitAudioContext); }
+
+  smooth(param, value, timeConstant = 0.08) {
+    if (!this.ctx) return;
+    param.setTargetAtTime(Math.max(0.0001, value), this.ctx.currentTime, timeConstant);
+  }
+
+  build() {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    let ctx;
+    try {
+      ctx = new Ctx({ latencyHint: 'playback' });
+    } catch (_) {
+      ctx = new Ctx();
+    }
+    this.ctx = ctx;
+
+    const osc = (type, freq) => {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.value = freq;
+      return o;
+    };
+
+    const limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -6;
+    limiter.knee.value = 8;
+    limiter.ratio.value = 12;
+    limiter.attack.value = 0.004;
+    limiter.release.value = 0.22;
+    limiter.connect(ctx.destination);
+
+    this.master = ctx.createGain();
+    this.master.gain.value = 0.0001;
+    this.master.connect(limiter);
+
+    const verb = ctx.createConvolver();
+    verb.normalize = false;
+    verb.buffer = this.impulse(ctx);
+    this.verb = verb;
+    const wet = ctx.createGain(); wet.gain.value = 0.50;
+    const dry = ctx.createGain(); dry.gain.value = 0.70;
+    this.dry = dry;
+    verb.connect(wet);
+    dry.connect(this.master);
+    wet.connect(this.master);
+
+    this.sub = osc('sine', 55.0);
+    this.subGain = ctx.createGain();
+    this.subGain.gain.value = 0.22;
+    this.sub.connect(this.subGain);
+    this.subGain.connect(dry);
+    this.sub.start();
+
+    this.droneF = ctx.createBiquadFilter();
+    this.droneF.type = 'lowpass';
+    this.droneF.frequency.value = 160;
+    this.droneF.Q.value = 1.2;
+    this.droneBus = ctx.createGain();
+    this.droneBus.gain.value = 0.16;
+
+    this.d1 = osc('sawtooth', 55.0);
+    this.d2 = osc('sawtooth', 110.0);
+    this.d2.detune.value = 5.0;
+    const d1Gain = ctx.createGain(); d1Gain.gain.value = 0.55;
+    const d2Gain = ctx.createGain(); d2Gain.gain.value = 0.45;
+    this.d1.connect(d1Gain); d1Gain.connect(this.droneF);
+    this.d2.connect(d2Gain); d2Gain.connect(this.droneF);
+    this.d1.start();
+    this.d2.start();
+    this.droneF.connect(this.droneBus);
+    this.droneBus.connect(dry);
+    this.droneBus.connect(verb);
+
+    this.organF = ctx.createBiquadFilter();
+    this.organF.type = 'lowpass';
+    this.organF.frequency.value = 380;
+    this.organF.Q.value = 0.9;
+    this.organBus = ctx.createGain();
+    this.organBus.gain.value = 0.20;
+
+    this.organ = this.chords[0].map((f, i) => {
+      const o = osc(i % 2 === 0 ? 'sawtooth' : 'triangle', f);
+      o.detune.value = (i - 2) * 3.0;
+      const g = ctx.createGain();
+      g.gain.value = i % 2 === 0 ? 0.11 : 0.16;
+      if (ctx.createStereoPanner) {
+        const pan = ctx.createStereoPanner();
+        pan.pan.value = (i - 2) * 0.32;
+        o.connect(g); g.connect(pan); pan.connect(this.organF);
+      } else {
+        o.connect(g); g.connect(this.organF);
+      }
+      o.start();
+      return o;
+    });
+    this.organF.connect(this.organBus);
+    this.organBus.connect(dry);
+    this.organBus.connect(verb);
+
+    this.diveFilter = ctx.createBiquadFilter();
+    this.diveFilter.type = 'lowpass';
+    this.diveFilter.frequency.value = 120;
+    this.diveFilter.Q.value = 2.6;
+
+    this.diveGain = ctx.createGain();
+    this.diveGain.gain.value = 0.0001;
+
+    const diveBaseFreqs = [55.0, 82.41, 110.0, 164.81];
+    this.diveOscs = diveBaseFreqs.map((freq, idx) => {
+      const o = osc(idx < 2 ? 'sawtooth' : 'triangle', freq);
+      o.detune.value = (idx - 1.5) * 6.0;
+      const g = ctx.createGain();
+      g.gain.value = 0.22;
+      o.connect(g);
+      g.connect(this.diveFilter);
+      o.start();
+      return { osc: o, base: freq };
+    });
+
+    const noiseLen = ctx.sampleRate * 3;
+    const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+    const nd = noiseBuf.getChannelData(0);
+    let brown = 0;
+    for (let i = 0; i < noiseLen; i++) {
+      const w = Math.random() * 2 - 1;
+      brown = (brown + 0.04 * w) / 1.04;
+      nd[i] = brown * 2.8;
+    }
+    const noiseSrc = ctx.createBufferSource();
+    noiseSrc.buffer = noiseBuf;
+    noiseSrc.loop = true;
+
+    this.roarFilter = ctx.createBiquadFilter();
+    this.roarFilter.type = 'bandpass';
+    this.roarFilter.frequency.value = 140;
+    this.roarFilter.Q.value = 1.1;
+
+    this.roarGain = ctx.createGain();
+    this.roarGain.gain.value = 0.0001;
+
+    noiseSrc.connect(this.roarFilter);
+    this.roarFilter.connect(this.roarGain);
+    this.roarGain.connect(dry);
+    this.roarGain.connect(verb);
+    noiseSrc.start();
+
+    this.diveFilter.connect(this.diveGain);
+    this.diveGain.connect(dry);
+    this.diveGain.connect(verb);
+  }
+
+  impulse(ctx) {
+    const dur = 2.4;
+    const len = Math.floor(ctx.sampleRate * dur);
+    const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const data = buf.getChannelData(ch);
+      let lp = 0;
+      for (let i = 0; i < len; i++) {
+        const t = i / len;
+        const white = Math.random() * 2 - 1;
+        lp = lp * 0.94 + white * 0.06;
+        const fadeIn = Math.min(1, i / (ctx.sampleRate * 0.03));
+        const env = Math.pow(1 - t, 2.8) * fadeIn;
+        data[i] = lp * env * 0.35;
+      }
+    }
+    return buf;
+  }
+
+  startChain() {
+    clearInterval(this.timer);
+    this.smooth(this.master.gain, 0.62, 0.35);
+    this.timer = setInterval(() => this.nextChord(), 7500);
+  }
+
+  async initDefault() {
+    if (!Drone.supported()) return;
+    if (!this.ctx) this.build();
+    this.on = true;
+    try {
+      await this.ctx.resume();
+      if (this.ctx.state === 'running') {
+        this.startChain();
+      }
+    } catch (_) {}
+  }
+
+  async unlockOnGesture() {
+    if (!this.on || !this.ctx) return;
+    if (this.ctx.state !== 'running') {
+      try {
+        await this.ctx.resume();
+        if (this.ctx.state === 'running' && this.on) {
+          this.startChain();
+        }
+      } catch (_) {}
+    }
+  }
+
+  async toggle() {
+    if (!this.ctx) this.build();
+    if (this.on) {
+      this.on = false;
+      this.smooth(this.master.gain, 0.0001, 0.15);
+      clearInterval(this.timer);
+      this.suspendTimer = setTimeout(() => { if (!this.on) this.ctx.suspend(); }, 450);
+    } else {
+      clearTimeout(this.suspendTimer);
+      this.on = true;
+      await this.ctx.resume();
+      this.startChain();
+    }
+    return this.on;
+  }
+
+  nextChord() {
+    if (!this.on || !this.ctx) return;
+    this.step = (this.step + 1) % this.chords.length;
+    const chord = this.chords[this.step];
+    this.organ.forEach((o, i) => {
+      this.smooth(o.frequency, chord[i], 1.1);
+    });
+  }
+
+  update(dive, shock, holding = false) {
+    if (!this.on || !this.ctx || this.ctx.state !== 'running') return;
+
+    const activeDive = holding ? Math.max(dive, 0.08) : dive;
+
+    this.smooth(this.droneF.frequency, Math.min(1100, 150 + activeDive * 520 + shock * 300), 0.06);
+    this.smooth(this.organF.frequency, Math.min(3200, 380 + activeDive * 1850 + shock * 950), 0.06);
+    this.smooth(this.organBus.gain, 0.20 + activeDive * 0.22, 0.06);
+    this.smooth(this.subGain.gain, 0.22 + activeDive * 0.18, 0.06);
+
+    const pf = 1 + activeDive * 0.28;
+    this.smooth(this.d1.frequency, 55.0 * pf, 0.07);
+    this.smooth(this.d2.frequency, 110.0 * pf, 0.07);
+    this.smooth(this.sub.frequency, 55.0 * (1 + activeDive * 0.18), 0.07);
+
+    const targetDiveGain = (holding || dive > 0.015) ? (0.08 + activeDive * 0.42) : 0.0001;
+    this.smooth(this.diveGain.gain, targetDiveGain, holding ? 0.05 : 0.14);
+    this.smooth(this.diveFilter.frequency, 130 + Math.pow(activeDive, 1.3) * 2400 + shock * 600, 0.05);
+
+    const riserPitch = 1 + Math.pow(activeDive, 1.15) * 1.0;
+    this.diveOscs.forEach((item) => {
+      this.smooth(item.osc.frequency, item.base * riserPitch, 0.05);
+    });
+
+    const targetRoar = (holding || dive > 0.015) ? (0.05 + activeDive * 0.36) : 0.0001;
+    this.smooth(this.roarGain.gain, targetRoar, holding ? 0.06 : 0.16);
+    this.smooth(this.roarFilter.frequency, 140 + activeDive * 780 + shock * 400, 0.06);
+  }
+
+  pulse(power) {
+    if (!this.on || !this.ctx || this.ctx.state !== 'running') return;
+    const t = this.ctx.currentTime;
+
+    const subOsc = this.ctx.createOscillator();
+    const subG = this.ctx.createGain();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(118 * (0.85 + power * 0.35), t);
+    subOsc.frequency.exponentialRampToValueAtTime(26, t + 1.8);
+    subG.gain.setValueAtTime(0.0001, t);
+    subG.gain.linearRampToValueAtTime(0.52, t + 0.02);
+    subG.gain.exponentialRampToValueAtTime(0.0001, t + 1.9);
+    subOsc.connect(subG);
+    subG.connect(this.dry);
+    subOsc.onended = () => { subOsc.disconnect(); subG.disconnect(); };
+    subOsc.start(t);
+    subOsc.stop(t + 1.95);
+
+    const shimmer = this.ctx.createOscillator();
+    const shimF = this.ctx.createBiquadFilter();
+    const shimG = this.ctx.createGain();
+    shimmer.type = 'triangle';
+    shimmer.frequency.setValueAtTime(220 * (0.9 + power * 0.25), t);
+    shimmer.frequency.exponentialRampToValueAtTime(55, t + 1.5);
+    shimF.type = 'lowpass';
+    shimF.frequency.setValueAtTime(1400, t);
+    shimF.frequency.exponentialRampToValueAtTime(180, t + 1.5);
+    shimG.gain.setValueAtTime(0.0001, t);
+    shimG.gain.linearRampToValueAtTime(0.26 * power, t + 0.03);
+    shimG.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
+    shimmer.connect(shimF);
+    shimF.connect(shimG);
+    shimG.connect(this.dry);
+    shimG.connect(this.verb);
+    shimmer.onended = () => { shimmer.disconnect(); shimF.disconnect(); shimG.disconnect(); };
+    shimmer.start(t);
+    shimmer.stop(t + 1.65);
+  }
+}
+
+const $ = (id) => document.getElementById(id);
+const el = {
+  canvas: $('sky'), hud: $('hud'), status: $('status'), reticle: $('reticle'), reticleProg: $('reticle-prog'),
+  dist: $('t-dist'), gamma: $('t-gamma'), earth: $('t-earth'), orbit: $('t-orbit'), me: $('g-me'),
+  exposure: $('exposure'), exposureOut: $('exposure-out'), sound: $('sound'), hide: $('hide'),
+  restore: $('restore'), loader: $('loader'), fail: $('fail')
+};
+
+const cam = { yaw: 0, pitch: VIEW.startPitch, dist: VIEW.startDist, distTarget: VIEW.startDist, yawV: 0, pitchV: 0 };
+const st = {
+  dive: 0, holding: false, shockR: 0, shockS: 0, diskTime: 0,
+  exposure: 1, palette: 'cinema', hud: true, interacted: false, frame: 0,
+  reduced: matchMedia('(prefers-reduced-motion: reduce)').matches
+};
+matchMedia('(prefers-reduced-motion: reduce)').addEventListener?.('change', (e) => { st.reduced = e.matches; });
+
+const audio = new Drone();
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const fmt = (n, d) => n.toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+let gl, fmtTex, progs, vao, noiseTex;
+let T = { scene: null, down: [], up: [] };
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+// Inicia em alta definição (resolução nativa) para evitar aspecto embaçado ou serrilhado
+const MAX_SCALE = Math.min(dpr, 1.6), MIN_SCALE = 0.75;
+let scale = Math.min(dpr, 1.25);
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(s);
+    gl.deleteShader(s);
+    throw Object.assign(new Error(log), { kind: 'shader' });
+  }
+  return s;
+}
+
+function program(body, names) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, VS));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, FS_HEAD + body));
+  gl.bindAttribLocation(p, 0, 'aPos');
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    throw Object.assign(new Error(gl.getProgramInfoLog(p)), { kind: 'shader' });
+  }
+  const u = {};
+  names.forEach((n) => { u[n] = gl.getUniformLocation(p, n); });
+  return { p, u };
+}
+
+function pickFormat() {
+  const ext = gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float');
+  return ext ? { internal: gl.RGBA16F, type: gl.HALF_FLOAT, hdr: true }
+             : { internal: gl.RGBA8, type: gl.UNSIGNED_BYTE, hdr: false };
+}
+
+function makeTarget(w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, fmtTex.internal, w, h, 0, gl.RGBA, fmtTex.type, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if (!ok) {
+    gl.deleteTexture(tex); gl.deleteFramebuffer(fb);
+    if (fmtTex.hdr) { fmtTex = { internal: gl.RGBA8, type: gl.UNSIGNED_BYTE, hdr: false }; return makeTarget(w, h); }
+    throw Object.assign(new Error('framebuffer incompleto'), { kind: 'shader' });
+  }
+  return { tex, fb, w, h };
+}
+
+function freeTarget(t) { if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); } }
+
+function allocate() {
+  const cw = Math.max(1, Math.round(innerWidth * dpr));
+  const ch = Math.max(1, Math.round(innerHeight * dpr));
+  el.canvas.width = cw;
+  el.canvas.height = ch;
+
+  freeTarget(T.scene); T.down.forEach(freeTarget); T.up.forEach(freeTarget);
+  const sw = Math.max(64, Math.round(innerWidth * scale));
+  const sh = Math.max(64, Math.round(innerHeight * scale));
+  T = { scene: makeTarget(sw, sh), down: [], up: [] };
+  let w = sw >> 1, h = sh >> 1;
+  for (let i = 0; i < 6 && w >= 4 && h >= 4; i++) {
+    T.down.push(makeTarget(w, h));
+    w >>= 1; h >>= 1;
+  }
+  for (let i = 0; i < T.down.length - 1; i++) T.up.push(makeTarget(T.down[i].w, T.down[i].h));
+}
+
+function makeNoiseTexture() {
+  const N = 128, P = 32, C = N / P;
+  let seed = 1337;
+  const rnd = () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const g = new Float32Array(P * P * P * 3);
+  for (let i = 0; i < P * P * P; i++) {
+    let x, y, z, l;
+    do { x = rnd() * 2 - 1; y = rnd() * 2 - 1; z = rnd() * 2 - 1; l = x * x + y * y + z * z; } while (l > 1 || l < 0.01);
+    l = Math.sqrt(l); g[i * 3] = x / l; g[i * 3 + 1] = y / l; g[i * 3 + 2] = z / l;
+  }
+  const fade = (t) => t * t * t * (t * (t * 6 - 15) + 10);
+  const data = new Uint8Array(N * N * N);
+  let k = 0;
+  for (let z = 0; z < N; z++) {
+    const iz = Math.floor(z / C), fz = z / C - iz, uz = fade(fz);
+    for (let y = 0; y < N; y++) {
+      const iy = Math.floor(y / C), fy = y / C - iy, uy = fade(fy);
+      for (let x = 0; x < N; x++) {
+        const ix = Math.floor(x / C), fx = x / C - ix, ux = fade(fx);
+        let n = 0;
+        for (let c = 0; c < 8; c++) {
+          const dx = c & 1, dy = (c >> 1) & 1, dz = c >> 2;
+          const gi = 3 * ((((iz + dz) % P) * P + ((iy + dy) % P)) * P + ((ix + dx) % P));
+          const dot = g[gi] * (fx - dx) + g[gi + 1] * (fy - dy) + g[gi + 2] * (fz - dz);
+          n += dot * (dx ? ux : 1 - ux) * (dy ? uy : 1 - uy) * (dz ? uz : 1 - uz);
+        }
+        data[k++] = Math.max(0, Math.min(255, Math.round((n / 0.8 * 0.5 + 0.5) * 255)));
+      }
+    }
+  }
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_3D, t);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage3D(gl.TEXTURE_3D, 0, gl.R8, N, N, N, 0, gl.RED, gl.UNSIGNED_BYTE, data);
+  gl.generateMipmap(gl.TEXTURE_3D);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R].forEach((w) => gl.texParameteri(gl.TEXTURE_3D, w, gl.REPEAT));
+  return t;
+}
+
+function pass(prog, target, setup) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, target ? target.fb : null);
+  gl.viewport(0, 0, target ? target.w : el.canvas.width, target ? target.h : el.canvas.height);
+  gl.useProgram(prog.p);
+  setup(prog.u);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+function tex(unit, t, loc) {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, t.tex);
+  gl.uniform1i(loc, unit);
+}
+
+function cameraFrame() {
+  const m = st.reduced ? 0.25 : 1;
+  const aspect = el.canvas.width / Math.max(1, el.canvas.height);
+  const portraitFit = aspect < 1 ? Math.min(1.42, 1 / Math.pow(aspect, 0.42)) : 1;
+  const dist = Math.max(VIEW.minDiveDist, cam.dist * portraitFit * (1 - 0.62 * st.dive * m));
+  const cp = Math.cos(cam.pitch);
+  const pos = [dist * cp * Math.sin(cam.yaw), dist * Math.sin(cam.pitch), dist * cp * Math.cos(cam.yaw)];
+  const fwd = pos.map((v) => -v / dist);
+  let right = [-fwd[2], 0, fwd[0]];
+  const rl = Math.hypot(...right) || 1;
+  right = right.map((v) => v / rl);
+  const up = [
+    right[1] * fwd[2] - right[2] * fwd[1],
+    right[2] * fwd[0] - right[0] * fwd[2],
+    right[0] * fwd[1] - right[1] * fwd[0]
+  ];
+  const cr = Math.cos(VIEW.roll), sr = Math.sin(VIEW.roll);
+  const r2 = right.map((v, i) => v * cr + up[i] * sr);
+  const u2 = up.map((v, i) => v * cr - right[i] * sr);
+  const fov = (VIEW.baseFov + 12 * st.dive * m) * Math.PI / 180;
+  return { pos, fwd, right: r2, up: u2, dist: dist / portraitFit, tanHalf: Math.tan(fov / 2), beta: 0.45 * st.dive * m };
+}
+
+function render(c) {
+  const pal = PALETTES[st.palette];
+  const s = T.scene;
+
+  pass(progs.ray, s, (u) => {
+    gl.uniform2f(u.uRes, s.w, s.h);
+    gl.uniform1f(u.uTime, st.diskTime);
+    gl.uniform3fv(u.uCamPos, c.pos);
+    gl.uniform3fv(u.uRight, c.right);
+    gl.uniform3fv(u.uUp, c.up);
+    gl.uniform3fv(u.uFwd, c.fwd);
+    gl.uniform1f(u.uTanHalf, c.tanHalf);
+    gl.uniform1f(u.uBeta, c.beta);
+    gl.uniform1f(u.uShockR, st.shockR);
+    gl.uniform1f(u.uShockS, st.shockS);
+    gl.uniform1f(u.uTpeak, pal.tpeak);
+    gl.uniform1f(u.uShift, pal.shift);
+    gl.uniform1f(u.uBeam, pal.beam);
+    gl.uniform1f(u.uGain, pal.gain);
+    gl.uniform3fv(u.uTint, pal.tint);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_3D, noiseTex);
+    gl.uniform1i(u.uNoise, 2);
+  });
+
+  const D = T.down, U = T.up;
+  pass(progs.prefilter, D[0], (u) => {
+    tex(0, s, u.uTex);
+    gl.uniform2f(u.uTexel, 1 / s.w, 1 / s.h);
+    gl.uniform1f(u.uThreshold, fmtTex.hdr ? 1.1 : 0.7);
+  });
+  for (let i = 1; i < D.length; i++) {
+    pass(progs.down, D[i], (u) => { tex(0, D[i - 1], u.uTex); gl.uniform2f(u.uTexel, 1 / D[i - 1].w, 1 / D[i - 1].h); });
+  }
+  for (let i = U.length - 1; i >= 0; i--) {
+    const src = i === U.length - 1 ? D[i + 1] : U[i + 1];
+    pass(progs.up, U[i], (u) => {
+      tex(0, src, u.uTex); tex(1, D[i], u.uBase);
+      gl.uniform2f(u.uTexel, 1 / src.w, 1 / src.h);
+    });
+  }
+  const bloom = U.length ? U[0] : D[0];
+  const m = st.reduced ? 0 : 1;
+
+  pass(progs.composite, null, (u) => {
+    tex(0, s, u.uScene); tex(1, bloom, u.uBloom);
+    gl.uniform1f(u.uExposure, st.exposure * 0.9);
+    gl.uniform1f(u.uBloomStr, 0.48 + 0.38 * st.dive + 0.45 * st.shockS);
+    gl.uniform1f(u.uAberr, m * (0.010 * st.dive + 0.003 * st.shockS));
+    gl.uniform1f(u.uVig, 0.35 + 0.45 * st.dive * (st.reduced ? 0.3 : 1));
+    gl.uniform1f(u.uAspect, el.canvas.width / el.canvas.height);
+    gl.uniform1f(u.uFrame, st.frame % 1000);
+  });
+}
+
+const keys = new Set();
+let gesture = null;
+
+function update(dt) {
+  if (st.holding) st.dive += (1 - st.dive) * Math.min(1, dt * 1.6);
+  else st.dive += (0 - st.dive) * Math.min(1, dt * 2.8);
+
+  if (keys.size) {
+    const k = 1.1 * dt;
+    if (keys.has('ArrowLeft')) cam.yaw += k;
+    if (keys.has('ArrowRight')) cam.yaw -= k;
+    if (keys.has('ArrowUp')) cam.pitch += k * 0.7;
+    if (keys.has('ArrowDown')) cam.pitch -= k * 0.7;
+  }
+  const dragging = gesture && (gesture.mode === 'orbit' || gesture.mode === 'dive');
+  if (!dragging) {
+    if (st.reduced) { cam.yawV = 0; cam.pitchV = 0; }
+    cam.yaw += cam.yawV * dt;
+    cam.pitch += cam.pitchV * dt;
+    const decay = Math.pow(0.03, dt);
+    cam.yawV *= decay; cam.pitchV *= decay;
+  }
+  cam.pitch = clamp(cam.pitch, -1.25, 1.25);
+  cam.dist += (cam.distTarget - cam.dist) * Math.min(1, dt * 6);
+
+  if (st.shockS > 0) {
+    st.shockR += dt * 10;
+    st.shockS *= Math.pow(0.25, dt);
+    if (st.shockS < 0.01 || st.shockR > PHYS.R_OUT + 3) st.shockS = 0;
+  }
+
+  const speed = 5 * (1 + 2.5 * st.dive * (st.reduced ? 0.25 : 1)) * (st.reduced ? 0.4 : 1);
+  st.diskTime = (st.diskTime + dt * speed) % (PHYS.FLOW_PERIOD * 1000);
+
+  if (st.holding) el.reticleProg.style.strokeDashoffset = String(138.23 * (1 - st.dive));
+}
+
+const gx = (r) => Math.log(r) / Math.log(GAUGE.rMax) * GAUGE.width;
+function setupGauge() {
+  const x3 = gx(PHYS.R_IN), x14 = gx(PHYS.R_OUT), xp = gx(1.5);
+  $('g-disk').setAttribute('x', x3.toFixed(1));
+  $('g-disk').setAttribute('width', (x14 - x3).toFixed(1));
+  $('g-ph').setAttribute('x1', xp.toFixed(1)); $('g-ph').setAttribute('x2', xp.toFixed(1));
+  $('g-disk-t').setAttribute('x', ((x3 + x14) / 2).toFixed(1));
+}
+
+let lastTele = 0, lastAudio = 0;
+function telemetry(now, c) {
+  if (now - lastAudio > 40) { lastAudio = now; audio.update(st.dive, st.shockS, st.holding); }
+  if (!st.hud || now - lastTele < 100) return;
+  lastTele = now;
+
+  const r = c.dist;
+  const betaOrb = Math.min(0.95, Math.sqrt(0.5 * PHYS.RS / Math.max(r - PHYS.RS, 0.06)));
+  const betaDive = Math.pow(st.dive, 1.35) * 0.992;
+  const betaTotal = (betaOrb + betaDive) / (1 + betaOrb * betaDive);
+
+  const gravFactor = Math.max(0.001, 1 - PHYS.RS / r);
+  const kinFactor = Math.max(0.0001, 1 - betaTotal * betaTotal);
+  const g = 1 / Math.sqrt(gravFactor * kinFactor);
+
+  el.dist.textContent = fmt(r, 1);
+  el.gamma.textContent = 'γ ' + fmt(g, g >= 10 ? 2 : 4);
+
+  const mins = 60 * g;
+  if (mins < 60 * 24) {
+    let h = Math.floor(mins / 60), mm = Math.round(mins - h * 60);
+    if (mm === 60) { h += 1; mm = 0; }
+    el.earth.textContent = `${h} h ${String(mm).padStart(2, '0')} min na Terra`;
+  } else if (mins < 60 * 24 * 365.25) {
+    const days = mins / (60 * 24);
+    el.earth.textContent = `${fmt(days, 1)} dias na Terra`;
+  } else {
+    const years = mins / (60 * 24 * 365.25);
+    el.earth.textContent = `${fmt(years, 1)} anos na Terra`;
+  }
+
+  el.orbit.textContent = fmt(betaTotal, 2) + ' c';
+  el.me.setAttribute('transform', `translate(${gx(clamp(r, 1, GAUGE.rMax)).toFixed(1)},0)`);
+}
+
+let ema = 1 / 60, lastAdapt = 0, cooldownUntil = 0;
+function adapt(now) {
+  if (now - lastAdapt < 900) return;
+  lastAdapt = now;
+  let next = scale;
+  // Só reduz a escala se a taxa de quadros cair abaixo de ~26 FPS
+  if (ema > 1 / 18) { next = Math.max(MIN_SCALE, scale * 0.78); cooldownUntil = now + 3000; }
+  else if (ema > 1 / 26) { next = Math.max(MIN_SCALE, scale * 0.90); cooldownUntil = now + 2500; }
+  else if (ema < 1 / 46 && now > cooldownUntil) next = Math.min(MAX_SCALE, scale * 1.08);
+  if (Math.abs(next - scale) / scale > 0.05) { scale = next; allocate(); }
+}
+
+let last = 0, needsResize = false;
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (!last) last = now;
+  const raw = Math.min((now - last) / 1000, 0.1);
+  last = now;
+  ema = ema * 0.92 + raw * 0.08;
+  if (needsResize) { needsResize = false; allocate(); }
+
+  update(Math.min(raw, 0.05));
+  const c = cameraFrame();
+  render(c);
+  telemetry(now, c);
+  adapt(now);
+
+  st.frame++;
+  if (st.frame === 2) {
+    el.loader.classList.add('gone');
+    setTimeout(() => { el.loader.hidden = true; }, 700);
+  }
+}
+
+let statusTimer = null;
+function setStatus(text, ms) {
+  clearTimeout(statusTimer);
+  if (!text) { el.status.classList.add('dim'); return; }
+  el.status.textContent = text;
+  el.status.classList.remove('dim');
+  if (ms) statusTimer = setTimeout(() => el.status.classList.add('dim'), ms);
+}
+
+function markInteracted() {
+  if (st.interacted) return;
+  st.interacted = true;
+  if (!st.holding) setStatus('');
+}
+
+function moveReticle(x, y) {
+  el.reticle.style.left = x + 'px';
+  el.reticle.style.top = y + 'px';
+}
+
+function startDive(x, y) {
+  if (st.holding) return;
+  markInteracted();
+  st.holding = true;
+  audio.unlockOnGesture();
+  audio.update(Math.max(st.dive, 0.08), st.shockS, true);
+  moveReticle(x, y);
+  el.reticle.classList.remove('burst');
+  el.reticle.classList.add('on');
+  el.hud.classList.add('diving');
+  setStatus('Mergulhando rumo ao horizonte. Solte para liberar o pulso.');
+}
+
+function releaseDive() {
+  if (!st.holding) return;
+  st.holding = false;
+  const power = 0.4 + 0.9 * st.dive;
+  st.shockR = PHYS.R_IN;
+  st.shockS = power * (st.reduced ? 0.5 : 1);
+  audio.pulse(power);
+  el.hud.classList.remove('diving');
+  el.reticle.classList.remove('on');
+  if (!st.reduced) {
+    el.reticle.classList.add('burst');
+    el.reticle.addEventListener('animationend', () => el.reticle.classList.remove('burst'), { once: true });
+  }
+  setStatus('Pulso liberado', 1600);
+}
+
+function bindInput() {
+  const cv = el.canvas;
+  const pointers = new Map();
+  let holdTimer = null;
+  const K = 0.005;
+
+  const pinchDist = () => {
+    const [a, b] = [...pointers.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y) || 1;
+  };
+
+  cv.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    cv.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    markInteracted();
+    cam.yawV = 0; cam.pitchV = 0;
+
+    if (pointers.size === 2) {
+      clearTimeout(holdTimer);
+      if (st.holding) releaseDive();
+      gesture = { mode: 'pinch', d0: pinchDist(), dist0: cam.distTarget };
+      return;
+    }
+    gesture = { mode: 'pending', x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, lt: e.timeStamp };
+    moveReticle(e.clientX, e.clientY);
+    holdTimer = setTimeout(() => {
+      if (gesture && gesture.mode === 'pending') { gesture.mode = 'dive'; startDive(gesture.lx, gesture.ly); }
+    }, 220);
+  });
+
+  cv.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId) || !gesture) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (gesture.mode === 'pinch') {
+      if (pointers.size === 2) cam.distTarget = clamp(gesture.dist0 * gesture.d0 / pinchDist(), VIEW.minDist, VIEW.maxDist);
+      return;
+    }
+    const dx = e.clientX - gesture.lx, dy = e.clientY - gesture.ly;
+    if (gesture.mode === 'pending' && Math.hypot(e.clientX - gesture.x0, e.clientY - gesture.y0) > 6) {
+      clearTimeout(holdTimer);
+      gesture.mode = 'orbit';
+      cv.classList.add('dragging');
+    }
+    if (gesture.mode === 'orbit' || gesture.mode === 'dive') {
+      cam.yaw -= dx * K;
+      cam.pitch = clamp(cam.pitch + dy * K, -1.25, 1.25);
+      const edt = Math.max((e.timeStamp - gesture.lt) / 1000, 0.004);
+      cam.yawV = cam.yawV * 0.6 + (-dx * K / edt) * 0.4;
+      cam.pitchV = cam.pitchV * 0.6 + (dy * K / edt) * 0.4;
+    }
+    if (gesture.mode === 'dive') moveReticle(e.clientX, e.clientY);
+    gesture.lx = e.clientX; gesture.ly = e.clientY; gesture.lt = e.timeStamp;
+  });
+
+  const end = (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.delete(e.pointerId);
+    clearTimeout(holdTimer);
+    if (!gesture) return;
+    if (gesture.mode === 'dive') releaseDive();
+    if (gesture.mode === 'orbit' && e.timeStamp - gesture.lt > 80) { cam.yawV = 0; cam.pitchV = 0; }
+    if (gesture.mode === 'pinch' && pointers.size === 1) {
+      const [p] = pointers.values();
+      gesture = { mode: 'orbit', x0: p.x, y0: p.y, lx: p.x, ly: p.y, lt: e.timeStamp };
+      return;
+    }
+    if (pointers.size === 0) { gesture = null; cv.classList.remove('dragging'); }
+  };
+  cv.addEventListener('pointerup', end);
+  cv.addEventListener('pointercancel', end);
+  cv.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  cv.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    markInteracted();
+    cam.distTarget = clamp(cam.distTarget * Math.exp(e.deltaY * 0.0012), VIEW.minDist, VIEW.maxDist);
+  }, { passive: false });
+
+  const isControl = (t) => t && t.closest && t.closest('button, input, label');
+  window.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === 'h' || e.key === 'H') { toggleHud(); return; }
+    if (e.code === 'Space') {
+      if (isControl(e.target)) return;
+      e.preventDefault();
+      if (!e.repeat) startDive(innerWidth / 2, innerHeight / 2);
+      return;
+    }
+    if (e.key.startsWith('Arrow') && !isControl(e.target)) { e.preventDefault(); keys.add(e.key); markInteracted(); }
+    if ((e.key === '+' || e.key === '=') && !isControl(e.target)) cam.distTarget = clamp(cam.distTarget * 0.9, VIEW.minDist, VIEW.maxDist);
+    if (e.key === '-' && !isControl(e.target)) cam.distTarget = clamp(cam.distTarget * 1.1, VIEW.minDist, VIEW.maxDist);
+  });
+  window.addEventListener('keyup', (e) => {
+    keys.delete(e.key);
+    if (e.code === 'Space') releaseDive();
+  });
+  window.addEventListener('blur', () => { keys.clear(); releaseDive(); });
+
+  window.addEventListener('resize', () => { needsResize = true; });
+
+  el.exposure.addEventListener('input', () => {
+    const ev = (Number(el.exposure.value) - 50) / 25;
+    st.exposure = Math.pow(2, ev);
+    el.exposureOut.textContent = Math.round(st.exposure * 100) + '%';
+  });
+
+  document.querySelectorAll('[data-palette]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      st.palette = btn.dataset.palette;
+      document.querySelectorAll('[data-palette]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+    });
+  });
+
+  if (!Drone.supported()) {
+    el.sound.disabled = true;
+    el.sound.setAttribute('aria-pressed', 'false');
+    el.sound.textContent = 'Som indisponível';
+  } else {
+    audio.initDefault();
+    const unlockEvents = ['pointerdown', 'touchstart', 'keydown', 'wheel'];
+    const onFirstGesture = (e) => {
+      if (e.target && e.target.closest && e.target.closest('#sound')) return;
+      audio.unlockOnGesture();
+      if (audio.ctx && audio.ctx.state === 'running') {
+        unlockEvents.forEach((ev) => window.removeEventListener(ev, onFirstGesture, true));
+      }
+    };
+    unlockEvents.forEach((ev) => window.addEventListener(ev, onFirstGesture, { capture: true, passive: true }));
+  }
+  el.sound.addEventListener('click', async () => {
+    const on = await audio.toggle();
+    el.sound.setAttribute('aria-pressed', String(on));
+    el.sound.textContent = on ? 'Som ligado' : 'Som desligado';
+  });
+
+  el.hide.addEventListener('click', toggleHud);
+  el.restore.addEventListener('click', toggleHud);
+  window.addEventListener('pointermove', () => { if (!st.hud) flashRestore(); });
+}
+
+let restoreTimer = null;
+function flashRestore() {
+  el.restore.classList.add('show');
+  clearTimeout(restoreTimer);
+  restoreTimer = setTimeout(() => el.restore.classList.remove('show'), 2500);
+}
+
+function toggleHud() {
+  st.hud = !st.hud;
+  el.hud.classList.toggle('hidden', !st.hud);
+  el.hud.inert = !st.hud;
+  el.hud.setAttribute('aria-hidden', String(!st.hud));
+  document.body.classList.toggle('hud-off', !st.hud);
+  el.restore.hidden = st.hud;
+  if (st.hud) { el.restore.classList.remove('show'); el.hide.focus({ preventScroll: true }); }
+  else flashRestore();
+}
+
+function showFail(kind) {
+  const msgs = {
+    webgl: ['WebGL 2 indisponível',
+      'A simulação precisa de WebGL 2. Abra em um navegador atualizado e confira se a aceleração de hardware está ativada.'],
+    shader: ['A placa de vídeo não compilou a simulação',
+      'Atualize o navegador ou os drivers de vídeo e recarregue a página.'],
+    lost: ['A placa de vídeo reiniciou',
+      'O navegador interrompeu a renderização para liberar a GPU. Recarregue a página para voltar.']
+  };
+  const [title, text] = msgs[kind] || msgs.shader;
+  $('fail-title').textContent = title;
+  $('fail-text').textContent = text;
+  el.loader.hidden = true;
+  el.fail.hidden = false;
+}
+$('fail-reload').addEventListener('click', () => location.reload());
+
+function start() {
+  try {
+    gl = el.canvas.getContext('webgl2', {
+      antialias: false, alpha: false, depth: false, stencil: false,
+      premultipliedAlpha: false, powerPreference: 'high-performance'
+    });
+    if (!gl) { showFail('webgl'); return; }
+
+    el.canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); showFail('lost'); });
+
+    fmtTex = pickFormat();
+    progs = {
+      ray: program(FS_RAY, ['uRes', 'uTime', 'uCamPos', 'uRight', 'uUp', 'uFwd', 'uTanHalf', 'uBeta',
+        'uShockR', 'uShockS', 'uTpeak', 'uShift', 'uBeam', 'uGain', 'uTint', 'uNoise']),
+      prefilter: program(FS_PREFILTER, ['uTex', 'uTexel', 'uThreshold']),
+      down: program(FS_DOWN, ['uTex', 'uTexel']),
+      up: program(FS_UP, ['uTex', 'uBase', 'uTexel']),
+      composite: program(FS_COMPOSITE, ['uScene', 'uBloom', 'uExposure', 'uBloomStr', 'uAberr', 'uVig', 'uAspect', 'uFrame'])
+    };
+
+    vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.BLEND);
+
+    noiseTex = makeNoiseTexture();
+    allocate();
+    setupGauge();
+    bindInput();
+    requestAnimationFrame(frame);
+  } catch (err) {
+    console.error(err);
+    showFail(err.kind || 'shader');
+  }
+}
+
+requestAnimationFrame(() => setTimeout(start, 0));
+})();
+</script>
+</body>
+</html>
